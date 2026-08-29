@@ -1,0 +1,11 @@
+[[profiles]]
+name = "system"
+
+  [[profiles.commands]]
+  name = "print-rand"
+  command = "pwgen --ambiguous --remove-chars=\"oO\" -1 20 20"
+
+    [[profiles.commands.params]]
+    name = "length"
+    prompt = "Password length"
+    default = "20"

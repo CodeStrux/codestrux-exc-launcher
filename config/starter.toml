@@ -1,0 +1,58 @@
+[meta]
+theme = "default"
+
+[[profiles]]
+name = "system"
+label = "System"
+
+  [[profiles.commands]]
+  name = "disk-usage"
+  description = "Show disk usage for the current directory"
+  command = "du -sh ."
+
+  [[profiles.commands]]
+  name = "print-hosts"
+  description = "Print /etc/hosts"
+  command = "cat /etc/hosts"
+
+[[profiles]]
+name = "network"
+label = "Network"
+
+  [[profiles.commands]]
+  name = "ping-host"
+  description = "Ping a host 4 times"
+  command = "ping -c 4 {{host}}"
+
+    [[profiles.commands.params]]
+    name = "host"
+    prompt = "Host to ping"
+    default = "1.1.1.1"
+
+  [[profiles.commands]]
+  name = "cert-check-online"
+  description = "Check the TLS certificate presented by a remote domain"
+  command = "openssl s_client -connect {{domain}}:443"
+
+    [[profiles.commands.params]]
+    name = "domain"
+    prompt = "Domain to check"
+    default = ""
+
+[[profiles]]
+name = "ssh"
+label = "SSH"
+
+  [[profiles.commands]]
+  name = "example-server"
+  description = "SSH into an example server with a local port forward"
+  command = "ssh user@example.com -L 8080:localhost:8080"
+
+[[profiles]]
+name = "crypto"
+label = "Crypto"
+
+  [[profiles.commands]]
+  name = "gpg-decrypt"
+  description = "Decrypt a GPG file picked interactively via fzf"
+  command = "file=$(fzf --query '.gpg'); [ -z \"$file\" ] && echo 'No file selected' >&2 || gpg --trust-model always --output \"${file%.gpg}\" --decrypt \"$file\""

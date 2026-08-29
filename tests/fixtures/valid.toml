@@ -1,0 +1,27 @@
+[meta]
+title = "test@fixture"
+theme = "default"
+
+[[profiles]]
+name = "network"
+label = "Network"
+
+  [[profiles.commands]]
+  name = "cert-check-online"
+  description = "Check the TLS certificate presented by a remote domain"
+  command = "openssl s_client -connect {{domain}}:443"
+
+    [[profiles.commands.params]]
+    name = "domain"
+    prompt = "Domain to check"
+    default = ""
+    secret = false
+
+[[profiles]]
+name = "misc"
+label = "Misc"
+
+  [[profiles.commands]]
+  name = "print-hosts"
+  description = "Print /etc/hosts"
+  command = "cat /etc/hosts"

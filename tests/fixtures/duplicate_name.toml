@@ -1,0 +1,13 @@
+[[profiles]]
+name = "a"
+
+  [[profiles.commands]]
+  name = "print-hosts"
+  command = "cat /etc/hosts"
+
+[[profiles]]
+name = "b"
+
+  [[profiles.commands]]
+  name = "print-hosts"
+  command = "cat /etc/hosts"

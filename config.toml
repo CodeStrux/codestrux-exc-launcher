@@ -1,0 +1,170 @@
+[meta]
+title = "example@exc"
+theme = "dark"
+# theme_file = "themes/dracula.toml"   # or pick one of the palettes in themes/
+
+[[profiles]]
+name = "system"
+label = "System"
+description = "Everyday local system commands"
+
+  [[profiles.commands]]
+  name = "disk-usage"
+  description = "Show disk usage for the current directory"
+  command = "du -sh ."
+
+  [[profiles.commands]]
+  name = "top-processes"
+  description = "Show the top CPU-consuming processes"
+  command = "ps aux | sort -rk 3 | head -n 10"
+
+  [[profiles.commands]]
+  name = "print-hosts"
+  description = "Print /etc/hosts"
+  command = "cat /etc/hosts"
+
+  [[profiles.commands]]
+  name = "flush-dns"
+  description = "Flush the local DNS cache (macOS)"
+  command = "sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder"
+
+[[profiles]]
+name = "git"
+label = "Git"
+description = "Common actions run against the current repository"
+
+  [[profiles.commands]]
+  name = "git-status"
+  description = "Show a short status of the working tree"
+  command = "git status -sb"
+
+  [[profiles.commands]]
+  name = "git-log-graph"
+  description = "Show a compact commit graph"
+  command = "git log --oneline --graph --decorate -n 30"
+
+  [[profiles.commands]]
+  name = "git-clean-branches"
+  description = "Prune remote-tracking refs, then list branches already merged into main"
+  command = "git fetch --prune; git branch --merged main | grep -v '\\*\\|main'"
+
+  [[profiles.commands]]
+  name = "git-checkout-branch"
+  description = "Checkout a branch by name"
+  command = "git checkout {{branch}}"
+
+    [[profiles.commands.params]]
+    name = "branch"
+    prompt = "Branch to checkout"
+    default = "main"
+
+[[profiles]]
+name = "docker"
+label = "Docker"
+description = "Local container housekeeping"
+
+  [[profiles.commands]]
+  name = "docker-ps"
+  description = "List running containers"
+  command = "docker ps"
+
+  [[profiles.commands]]
+  name = "docker-prune"
+  description = "Remove stopped containers, dangling images, and unused volumes"
+  command = "docker container prune -f; docker image prune -f; docker volume prune -f"
+
+  [[profiles.commands]]
+  name = "docker-logs"
+  description = "Tail logs for a running container"
+  command = "docker logs -f --tail 200 {{container}}"
+
+    [[profiles.commands.params]]
+    name = "container"
+    prompt = "Container name or id"
+    default = ""
+
+[[profiles]]
+name = "network"
+label = "Network"
+description = "Connectivity and TLS diagnostics"
+
+  [[profiles.commands]]
+  name = "ping-host"
+  description = "Ping a host 4 times"
+  command = "ping -c 4 {{host}}"
+
+    [[profiles.commands.params]]
+    name = "host"
+    prompt = "Host to ping"
+    default = "1.1.1.1"
+
+  [[profiles.commands]]
+  name = "cert-check-online"
+  description = "Check the TLS certificate presented by a remote domain"
+  command = "openssl s_client -connect {{domain}}:443 </dev/null 2>/dev/null | openssl x509 -noout -dates -subject"
+
+    [[profiles.commands.params]]
+    name = "domain"
+    prompt = "Domain to check"
+    default = ""
+
+  [[profiles.commands]]
+  name = "dns-lookup"
+  description = "Query A/AAAA/MX records for a domain"
+  command = "dig +short {{domain}} A AAAA MX"
+
+    [[profiles.commands.params]]
+    name = "domain"
+    prompt = "Domain to look up"
+    default = ""
+
+[[profiles]]
+name = "secrets"
+label = "Secrets"
+description = "Local crypto helpers"
+
+  [[profiles.commands]]
+  name = "gpg-decrypt"
+  description = "Decrypt a GPG file picked interactively via fzf"
+  command = '''file=$(fzf --query '.gpg'); [ -z "$file" ] && echo "No file selected" >&2 || gpg --trust-model always --output "${file%.gpg}" --decrypt "$file"'''
+
+  [[profiles.commands]]
+  name = "gen-password"
+  description = "Generate a random password"
+  command = "openssl rand -base64 {{length}} | tr -d '\\n'; echo"
+
+    [[profiles.commands.params]]
+    name = "length"
+    prompt = "Password byte length"
+    default = "20"
+
+  [[profiles.commands]]
+  name = "gen-hex-secret"
+  description = "Generate a random hex secret, e.g. for a JWT signing key"
+  command = "node -e \"console.log(require('crypto').randomBytes(32).toString('hex'));\""
+
+[[profiles]]
+name = "deploy"
+label = "Deploy"
+description = "Example project-specific deployment tasks"
+
+  [[profiles.commands]]
+  name = "deploy-staging"
+  description = "Deploy the current branch to staging"
+  command = "ssh {{deploy_user}}@staging.example.com 'cd /srv/app && git pull && systemctl restart app'"
+
+    [[profiles.commands.params]]
+    name = "deploy_user"
+    prompt = "SSH user for staging"
+    default = "deploy"
+
+  [[profiles.commands]]
+  name = "prod-health-check"
+  description = "Run an authenticated health check against production"
+  command = "curl -sS -H \"Authorization: Bearer {{token}}\" https://api.example.com/health"
+
+    [[profiles.commands.params]]
+    name = "token"
+    prompt = "Production API token"
+    default = ""
+    secret = true

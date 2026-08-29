@@ -1,0 +1,13 @@
+/target
+
+# Personal/dev config and launcher script with real hosts, IPs, and
+# credentials — never meant to be committed. See config.toml and
+# launcher.sh at the repo root for the tracked, generic examples.
+/local/
+
+# IDE and editor files
+/.idea/
+/.vscode/
+
+# Misc local scratch files
+resume

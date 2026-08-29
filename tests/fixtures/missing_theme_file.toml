@@ -1,0 +1,9 @@
+[meta]
+theme_file = "does-not-exist.toml"
+
+[[profiles]]
+name = "misc"
+
+  [[profiles.commands]]
+  name = "print-hosts"
+  command = "cat /etc/hosts"

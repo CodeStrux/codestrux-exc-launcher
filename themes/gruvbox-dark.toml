@@ -1,0 +1,8 @@
+# Gruvbox Dark
+# https://github.com/morhetz/gruvbox
+accent = "#fe8019"
+border = "#928374"
+text = "#ebdbb2"
+muted = "#928374"
+selected_bg = "#fabd2f"
+selected_fg = "#282828"

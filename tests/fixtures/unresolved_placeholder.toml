@@ -1,0 +1,6 @@
+[[profiles]]
+name = "network"
+
+  [[profiles.commands]]
+  name = "cert-check-online"
+  command = "openssl s_client -connect {{domain}}:443"

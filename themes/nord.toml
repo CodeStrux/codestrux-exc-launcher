@@ -1,0 +1,8 @@
+# Nord
+# https://www.nordtheme.com/
+accent = "#88c0d0"
+border = "#4c566a"
+text = "#d8dee9"
+muted = "#4c566a"
+selected_bg = "#81a1c1"
+selected_fg = "#2e3440"

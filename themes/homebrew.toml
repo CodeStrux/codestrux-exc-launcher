@@ -1,0 +1,8 @@
+# Homebrew
+# Classic green-on-black terminal look, one of iTerm2's built-in profiles.
+accent = "#00ff00"
+border = "#167f16"
+text = "#29f10a"
+muted = "#1a7a1a"
+selected_bg = "#00ff00"
+selected_fg = "#000000"

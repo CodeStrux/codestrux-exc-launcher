@@ -1,0 +1,9 @@
+[theme]
+accent = "not-a-real-color"
+
+[[profiles]]
+name = "misc"
+
+  [[profiles.commands]]
+  name = "print-hosts"
+  command = "cat /etc/hosts"

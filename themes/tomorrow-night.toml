@@ -1,0 +1,8 @@
+# Tomorrow Night
+# https://github.com/chriskempson/tomorrow-theme
+accent = "#81a2be"
+border = "#969896"
+text = "#c5c8c6"
+muted = "#969896"
+selected_bg = "#f0c674"
+selected_fg = "#1d1f21"

@@ -1,0 +1,8 @@
+# Solarized Dark
+# https://ethanschoonover.com/solarized/
+accent = "#268bd2"
+border = "#586e75"
+text = "#839496"
+muted = "#586e75"
+selected_bg = "#b58900"
+selected_fg = "#002b36"

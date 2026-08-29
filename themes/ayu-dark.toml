@@ -1,0 +1,8 @@
+# Ayu Dark
+# https://github.com/ayu-theme/ayu-colors
+accent = "#ff8f40"
+border = "#5c6773"
+text = "#e6e1cf"
+muted = "#5c6773"
+selected_bg = "#59c2ff"
+selected_fg = "#0f1419"

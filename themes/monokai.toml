@@ -1,0 +1,7 @@
+# Monokai
+accent = "#a6e22e"
+border = "#75715e"
+text = "#f8f8f2"
+muted = "#75715e"
+selected_bg = "#f92672"
+selected_fg = "#272822"

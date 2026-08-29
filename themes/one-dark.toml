@@ -1,0 +1,8 @@
+# One Dark (Atom)
+# https://github.com/atom/one-dark-ui
+accent = "#61afef"
+border = "#5c6370"
+text = "#abb2bf"
+muted = "#5c6370"
+selected_bg = "#c678dd"
+selected_fg = "#282c34"

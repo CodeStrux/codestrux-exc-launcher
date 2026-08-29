@@ -1,0 +1,8 @@
+# Solarized Light
+# https://ethanschoonover.com/solarized/
+accent = "#268bd2"
+border = "#93a1a1"
+text = "#657b83"
+muted = "#93a1a1"
+selected_bg = "#b58900"
+selected_fg = "#fdf6e3"
