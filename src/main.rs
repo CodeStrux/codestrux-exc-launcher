@@ -203,10 +203,10 @@ fn resolve_theme(cli: &Cli, cfg: &Config, config_dir: &Path) -> theme::ThemeColo
     )
 }
 
-fn run_selected(cmd: &config::CommandEntry) -> Result<i32> {
+fn run_selected(id: usize, cmd: &config::CommandEntry) -> Result<i32> {
     let mut source = prompt::StdinSource;
     let values = prompt::prompt_for_params(&cmd.params, &mut source)?;
-    exec::run_command(cmd, &values)
+    exec::run_command(id, cmd, &values)
 }
 
 /// `name` may be either a command name (exact, or a unique substring match)
@@ -217,7 +217,7 @@ fn run_selected(cmd: &config::CommandEntry) -> Result<i32> {
 fn cmd_run(cfg: &Config, name: &str) -> Result<i32> {
     if let Ok(id) = name.parse::<usize>() {
         return match cfg.resolve_global_id(id) {
-            Some((_, cmd)) => run_selected(cmd),
+            Some((_, cmd)) => run_selected(id, cmd),
             None => {
                 eprintln!("error: no command #{id} (valid range: 1-{})", cfg.all_commands().len());
                 Ok(1)
@@ -251,7 +251,8 @@ fn cmd_run(cfg: &Config, name: &str) -> Result<i32> {
     };
 
     let (_, cmd) = target;
-    run_selected(cmd)
+    let id = cfg.global_id_of_name(&cmd.name).expect("resolved command must exist in all_commands()");
+    run_selected(id, cmd)
 }
 
 /// Numbers shown are 1-based **global** ids, continuous across all
@@ -347,6 +348,6 @@ fn cmd_picker(cfg: &Config, cli: &Cli) -> Result<i32> {
 
     match picker::run_picker(cfg, start_profile, &theme, &info)? {
         picker::PickerOutcome::Quit => Ok(0),
-        picker::PickerOutcome::Run(cmd) => run_selected(&cmd),
+        picker::PickerOutcome::Run(id, cmd) => run_selected(id, &cmd),
     }
 }

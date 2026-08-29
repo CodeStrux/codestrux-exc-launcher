@@ -162,10 +162,16 @@ impl<'a> App<'a> {
             .get(self.selected)
             .map(|&i| self.current_profile().commands[i].clone())
     }
+
+    /// 1-based global id of the currently selected item, matching the
+    /// numbers shown in the grid and by `exc list`.
+    fn selected_global_id(&self) -> Option<usize> {
+        self.filtered.get(self.selected).map(|&local_idx| self.profile_base() + local_idx + 1)
+    }
 }
 
 pub enum PickerOutcome {
-    Run(CommandEntry),
+    Run(usize, CommandEntry),
     Quit,
 }
 
@@ -222,8 +228,8 @@ fn event_loop(
                     KeyCode::Esc => return Ok(PickerOutcome::Quit),
                     KeyCode::Char('c') if ctrl => return Ok(PickerOutcome::Quit),
                     KeyCode::Enter => {
-                        if let Some(cmd) = app.selected_command() {
-                            return Ok(PickerOutcome::Run(cmd));
+                        if let (Some(id), Some(cmd)) = (app.selected_global_id(), app.selected_command()) {
+                            return Ok(PickerOutcome::Run(id, cmd));
                         }
                     }
                     KeyCode::Tab => app.next_profile(),

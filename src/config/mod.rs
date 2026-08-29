@@ -90,6 +90,11 @@ impl Config {
         self.profiles.iter().find(|p| p.name == name)
     }
 
+    /// 1-based global id of the command with this (globally unique) name.
+    pub fn global_id_of_name(&self, name: &str) -> Option<usize> {
+        self.all_commands().iter().position(|(_, c)| c.name == name).map(|i| i + 1)
+    }
+
     /// Resolve a 1-based global command number — stable across profiles, so
     /// "#5" always means the same command no matter which profile is
     /// currently shown or listed. Numbering runs continuously across
