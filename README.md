@@ -152,6 +152,33 @@ letters are live filter input (the same trade-off tools like `fzf` make). A
 number-only query is a dedicated "jump to ID" mode rather than a text search
 — the `#` prompt glyph (instead of `/`) shows when you're in it.
 
+## System info panel
+
+`exc sysinfo` (and the picker's header box) show three tiers of fields, each
+with a different cost budget:
+
+- **Always shown, computed synchronously at startup**: OS, host, kernel,
+  uptime, memory, disk, process count, CPU model/core count, load average
+  (macOS/Linux) or CPU% (Windows), swap, local IP, battery, shell/terminal,
+  local time, top processes, GPU name.
+- **Background-refreshed**: public IP, pending package updates, network
+  throughput. These are fetched off a background thread every ~30s (package
+  updates every ~30min, since that check itself can take a few seconds) and
+  patched into the panel once available — they never delay the picker
+  opening. `exc sysinfo` instead does a single bounded fetch (1.5s) and
+  simply omits these fields if that doesn't resolve in time, rather than
+  hanging the command.
+
+Every field beyond the original 7 is optional and simply omitted if it
+can't be determined on your platform (e.g. no battery present, no supported
+package manager found) — there's no forced parity across macOS/Linux/
+Windows. A couple of fields are genuinely platform-specific by design: load
+average has no Windows equivalent (CPU% is shown instead there), and swap/
+battery/GPU-name lookups each use a different native API per OS
+(`sysctl`/IOKit on macOS, `/proc`+`/sys` on Linux, kernel32 FFI + a
+PowerShell CIM query for GPU name on Windows — never `wmic`, which Windows
+11 removed in 2026).
+
 ## Themes
 
 Three built-in base palettes — `default`, `dark`, `mono` — selected via

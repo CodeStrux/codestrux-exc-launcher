@@ -315,6 +315,7 @@ fn cmd_sysinfo(cli: &Cli) -> Result<i32> {
     if let Some(title) = &cfg.meta.title {
         info.user_at_host = title.clone();
     }
+    info.tier3.set(hostinfo::background::fetch_tier3_bounded(std::time::Duration::from_millis(1500)));
 
     let width = crossterm::terminal::size().map(|(w, _)| w).unwrap_or(80);
     let no_color = cli.no_color || std::env::var_os("NO_COLOR").is_some();
@@ -335,10 +336,17 @@ fn cmd_picker(cfg: &Config, cli: &Cli) -> Result<i32> {
     let path = cli.config.clone().unwrap_or_else(config::default_config_path);
     let config_dir = path.parent().unwrap_or_else(|| Path::new(".")).to_path_buf();
     let theme = resolve_theme(cli, cfg, &config_dir);
-    let mut info = hostinfo::gather();
-    if let Some(title) = &cfg.meta.title {
-        info.user_at_host = title.clone();
-    }
+
+    let info = if cli.no_sysinfo {
+        None
+    } else {
+        let mut info = hostinfo::gather();
+        if let Some(title) = &cfg.meta.title {
+            info.user_at_host = title.clone();
+        }
+        hostinfo::background::spawn_refresh_thread(info.tier3.clone());
+        Some(info)
+    };
 
     let start_profile = cli
         .profile
@@ -346,7 +354,7 @@ fn cmd_picker(cfg: &Config, cli: &Cli) -> Result<i32> {
         .and_then(|name| cfg.profiles.iter().position(|p| p.name == name))
         .unwrap_or(0);
 
-    match picker::run_picker(cfg, start_profile, &theme, &info)? {
+    match picker::run_picker(cfg, start_profile, &theme, info.as_ref())? {
         picker::PickerOutcome::Quit => Ok(0),
         picker::PickerOutcome::Run(id, cmd) => run_selected(id, &cmd),
     }

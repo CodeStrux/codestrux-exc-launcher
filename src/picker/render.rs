@@ -47,7 +47,8 @@ pub struct DrawContext<'a> {
     pub selected: usize,
     pub scroll_offset: usize,
     pub theme: &'a ThemeColors,
-    pub info: &'a SystemInfo,
+    /// `None` when the panel is hidden via `--no-sysinfo`.
+    pub info: Option<&'a SystemInfo>,
 }
 
 pub fn draw(frame: &mut Frame, ctx: &DrawContext) {
@@ -59,8 +60,8 @@ pub fn draw(frame: &mut Frame, ctx: &DrawContext) {
     let selected_bg = conv_color(ctx.theme.selected_bg);
     let selected_fg = conv_color(ctx.theme.selected_fg);
 
-    let info_text = hostinfo::panel::render_plain(ctx.info, area.width);
-    let info_height = info_text.lines().count() as u16;
+    let info_layout = ctx.info.map(|info| hostinfo::panel::layout(info, area.width));
+    let info_height = info_layout.as_ref().map(|l| l.len() as u16).unwrap_or(0);
 
     let filter_height = 1u16;
     let footer_height = 1u16;
@@ -68,13 +69,30 @@ pub fn draw(frame: &mut Frame, ctx: &DrawContext) {
         .height
         .saturating_sub(info_height + filter_height + footer_height + 1);
 
-    // Info box.
+    // Info box (skipped entirely when the panel is hidden). Each segment
+    // keeps the color its role (border/label/value) maps to, so labels and
+    // values read as visually distinct instead of one flat color.
     let info_area = Rect { x: area.x, y: area.y, width: area.width, height: info_height.min(area.height) };
-    let info_lines: Vec<Line> = info_text
-        .lines()
-        .map(|l| Line::from(Span::styled(l.to_string(), Style::default().fg(accent))))
-        .collect();
-    frame.render_widget(Paragraph::new(info_lines), info_area);
+    if let Some(info_layout) = info_layout {
+        let info_lines: Vec<Line> = info_layout
+            .into_iter()
+            .map(|segments| {
+                let spans: Vec<Span> = segments
+                    .into_iter()
+                    .map(|seg| {
+                        let color = match seg.role {
+                            hostinfo::panel::Role::Border => border,
+                            hostinfo::panel::Role::Accent => accent,
+                            hostinfo::panel::Role::Text => text_c,
+                        };
+                        Span::styled(seg.text, Style::default().fg(color))
+                    })
+                    .collect();
+                Line::from(spans)
+            })
+            .collect();
+        frame.render_widget(Paragraph::new(info_lines), info_area);
+    }
 
     // Filter/profile line.
     let filter_y = info_area.y + info_area.height;

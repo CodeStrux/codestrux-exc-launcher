@@ -1,7 +1,6 @@
 //! Double-line box-drawing panel showing OS/host/kernel/uptime/memory/disk/
 //! process stats, replacing the original toilet/lolcat figlet banner. Field
-//! wrapping reuses the shared `layout` grid math, capped to a narrow (2
-//! fields per row) layout per the confirmed sketch. The box border always
+//! wrapping reuses the shared `layout` grid math. The box border always
 //! stretches to the full available terminal width — matching the command
 //! grid below it — with the extra space filled as trailing padding on each
 //! row rather than left as dead space outside the box.
@@ -10,35 +9,128 @@ use super::{format_uptime, SystemInfo};
 use crate::layout::display_width;
 use crate::theme::ThemeColors;
 
-const MAX_FIELD_COLUMNS: usize = 2;
+const MAX_FIELD_COLUMNS: usize = 4;
 const MIN_BOX_WIDTH: usize = 30;
 
+/// Field order is grouped by category (system identity, compute, memory/
+/// storage, power, network, environment, background) rather than by tier or
+/// insertion order, so related fields land next to each other in the grid
+/// instead of being scattered across rows.
 fn fields(info: &SystemInfo) -> Vec<(&'static str, String)> {
-    vec![
+    let mut f = vec![
+        // System identity.
         ("OS", info.os_display.clone()),
         ("Host", info.host_model.clone()),
         ("Kernel", info.kernel_version.clone()),
         ("Uptime", format_uptime(info.uptime_secs)),
-        ("Memory", format!("{}M / {}M", info.mem_used_mb, info.mem_total_mb)),
-        (
-            "Disk",
-            format!("{}G / {}G ({}%)", info.disk_used_gb, info.disk_total_gb, info.disk_pct),
-        ),
-        ("Procs", format!("{} running", info.process_count)),
-    ]
+    ];
+
+    // Compute.
+    match (&info.cpu_model, info.cpu_cores) {
+        (Some(model), Some(cores)) => f.push(("CPU", format!("{model} ({cores} cores)"))),
+        (Some(model), None) => f.push(("CPU", model.clone())),
+        (None, Some(cores)) => f.push(("CPU", format!("{cores} cores"))),
+        (None, None) => {}
+    }
+    if let Some(load) = info.load_avg_1m {
+        f.push(("Load", format!("{load:.2}")));
+    } else if let Some(pct) = info.cpu_percent {
+        f.push(("CPU%", format!("{pct:.0}%")));
+    }
+    if let Some(gpu) = &info.gpu_name {
+        f.push(("GPU", gpu.clone()));
+    }
+
+    // Memory & storage.
+    f.push(("Memory", format!("{}M / {}M", info.mem_used_mb, info.mem_total_mb)));
+    if let (Some(used), Some(total)) = (info.swap_used_mb, info.swap_total_mb) {
+        f.push(("Swap", format!("{used}M / {total}M")));
+    }
+    f.push((
+        "Disk",
+        format!("{}G / {}G ({}%)", info.disk_used_gb, info.disk_total_gb, info.disk_pct),
+    ));
+    f.push(("Procs", format!("{} running", info.process_count)));
+
+    // Power.
+    if let Some(pct) = info.battery_pct {
+        let charging = info.battery_charging.unwrap_or(false);
+        f.push(("Battery", format!("{pct}%{}", if charging { " (charging)" } else { "" })));
+    }
+
+    // Network (local, then background-refreshed).
+    if let Some(ip) = &info.local_ip {
+        f.push(("IP", ip.clone()));
+    }
+    let tier3 = info.tier3.snapshot();
+    if !tier3.ready {
+        f.push(("Net", "fetching\u{2026}".to_string()));
+    } else {
+        if let Some(ip) = &tier3.public_ip {
+            f.push(("Public IP", ip.clone()));
+        }
+        if let (Some(rx), Some(tx)) = (tier3.net_rx_bps, tier3.net_tx_bps) {
+            f.push(("Net", format!("\u{2193}{} \u{2191}{}", format_bps(rx), format_bps(tx))));
+        }
+    }
+
+    // Environment.
+    if let Some(shell) = &info.shell {
+        f.push(("Shell", shell.clone()));
+    }
+    if let Some(term) = &info.terminal {
+        f.push(("Term", term.clone()));
+    }
+    if let Some(time) = super::platform::local_time_string() {
+        f.push(("Time", time));
+    }
+
+    // Background (package updates only — network fields already grouped above).
+    if tier3.ready
+        && let Some(n) = tier3.pending_updates
+    {
+        f.push(("Updates", format!("{n} pending")));
+    }
+
+    f
 }
 
-/// Render the box as a plain string (no color codes) — used for width
-/// calculations and for `--no-color` output.
-pub fn render_plain(info: &SystemInfo, terminal_width: u16) -> String {
-    render_inner(info, terminal_width, None)
+fn format_bps(bytes_per_sec: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    if bytes_per_sec >= MB {
+        format!("{:.1}MB/s", bytes_per_sec as f64 / MB as f64)
+    } else if bytes_per_sec >= KB {
+        format!("{:.0}KB/s", bytes_per_sec as f64 / KB as f64)
+    } else {
+        format!("{bytes_per_sec}B/s")
+    }
 }
 
-pub fn render(info: &SystemInfo, terminal_width: u16, theme: &ThemeColors) -> String {
-    render_inner(info, terminal_width, Some(theme))
+/// Which theme color a rendered chunk of text should use. Kept separate
+/// from any particular output format (ANSI string vs. ratatui spans) so the
+/// row/padding math is computed exactly once and both the CLI renderer and
+/// the picker's ratatui renderer can each color it their own way.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Role {
+    Border,
+    /// Field labels and the header title — `theme.accent`.
+    Accent,
+    /// Field values — `theme.text`.
+    Text,
 }
 
-fn render_inner(info: &SystemInfo, terminal_width: u16, theme: Option<&ThemeColors>) -> String {
+pub struct Segment {
+    pub role: Role,
+    pub text: String,
+}
+
+/// Build the panel as role-tagged segments, one inner `Vec` per line.
+/// `render`/`render_plain` turn this into an ANSI/plain string; the picker
+/// turns it into colored ratatui spans directly, so labels and values (and
+/// the border) can each get their own color without re-deriving the
+/// column/padding layout a second time.
+pub fn layout(info: &SystemInfo, terminal_width: u16) -> Vec<Vec<Segment>> {
     let field_list = fields(info);
     let label_width = field_list.iter().map(|(l, _)| l.len()).max().unwrap_or(0);
     let value_width = field_list.iter().map(|(_, v)| display_width(v)).max().unwrap_or(0);
@@ -54,55 +146,96 @@ fn render_inner(info: &SystemInfo, terminal_width: u16, theme: Option<&ThemeColo
     // only fall back to the content's own width if the terminal is too
     // narrow to fit the fields at all.
     let box_width = available.max(content_width).max(MIN_BOX_WIDTH);
-
-    let mut out = String::new();
-    let (c_border, c_accent, c_text, reset) = match theme {
-        Some(t) => (
-            format!("\x1b[38;5;{}m", color_code(t.border)),
-            format!("\x1b[38;5;{}m", color_code(t.accent)),
-            format!("\x1b[38;5;{}m", color_code(t.text)),
-            "\x1b[0m".to_string(),
-        ),
-        None => (String::new(), String::new(), String::new(), String::new()),
-    };
-
     let inner_width = box_width.saturating_sub(2);
+
+    let border = |text: String| Segment { role: Role::Border, text };
+    let accent = |text: String| Segment { role: Role::Accent, text };
+    let value_seg = |text: String| Segment { role: Role::Text, text };
+
+    let mut lines: Vec<Vec<Segment>> = Vec::new();
 
     // Top border with title inset.
     let title = &info.user_at_host;
     if title.len() + 4 <= inner_width {
         let fill = inner_width - title.len() - 3;
-        out.push_str(&format!(
-            "{c_border}╔═ {c_accent}{title}{c_border} {}╗{reset}\n",
-            "═".repeat(fill)
-        ));
+        lines.push(vec![
+            border("\u{2554}\u{2550} ".to_string()),
+            accent(title.clone()),
+            border(format!(" {}\u{2557}", "\u{2550}".repeat(fill))),
+        ]);
     } else {
-        out.push_str(&format!("{c_border}╔{}╗{reset}\n", "═".repeat(inner_width)));
-        out.push_str(&format!(
-            "{c_border}║{reset} {c_accent}{title}{reset}{}{c_border}║{reset}\n",
-            " ".repeat(inner_width.saturating_sub(title.len() + 1))
-        ));
+        lines.push(vec![border(format!("\u{2554}{}\u{2557}", "\u{2550}".repeat(inner_width)))]);
+        lines.push(vec![
+            border("\u{2551} ".to_string()),
+            accent(title.clone()),
+            border(format!("{}\u{2551}", " ".repeat(inner_width.saturating_sub(title.len() + 1)))),
+        ]);
     }
 
     for chunk in field_list.chunks(columns) {
-        let mut row = String::new();
+        let mut row_segments: Vec<Segment> = Vec::new();
         let mut row_width = 0usize;
         for (i, (label, value)) in chunk.iter().enumerate() {
-            let cell = format!("{c_accent}{:<label_width$}{c_border}  {c_text}{:<value_width$}{reset}", label, value);
-            row.push_str(&cell);
+            row_segments.push(accent(format!("{:<label_width$}", label)));
+            row_segments.push(border("  ".to_string()));
+            row_segments.push(value_seg(format!("{:<value_width$}", value)));
             row_width += label_width + 2 + value_width;
             if i + 1 < chunk.len() {
-                row.push_str("  ");
+                row_segments.push(border("  ".to_string()));
                 row_width += 2;
             }
         }
         // "║ " (2) + row + pad + "║" (1) must equal box_width (inner_width + 2).
         let pad = inner_width.saturating_sub(row_width + 1);
-        out.push_str(&format!("{c_border}║ {reset}{row}{}{c_border}║{reset}\n", " ".repeat(pad)));
+        let mut line = vec![border("\u{2551} ".to_string())];
+        line.extend(row_segments);
+        line.push(border(format!("{}\u{2551}", " ".repeat(pad))));
+        lines.push(line);
     }
 
-    out.push_str(&format!("{c_border}╚{}╝{reset}", "═".repeat(inner_width)));
-    out
+    lines.push(vec![border(format!("\u{255a}{}\u{255d}", "\u{2550}".repeat(inner_width)))]);
+    lines
+}
+
+/// Render the box as a plain string (no color codes) — used for width
+/// calculations and for `--no-color` output.
+pub fn render_plain(info: &SystemInfo, terminal_width: u16) -> String {
+    render_from_layout(layout(info, terminal_width), None)
+}
+
+pub fn render(info: &SystemInfo, terminal_width: u16, theme: &ThemeColors) -> String {
+    render_from_layout(layout(info, terminal_width), Some(theme))
+}
+
+fn render_from_layout(lines: Vec<Vec<Segment>>, theme: Option<&ThemeColors>) -> String {
+    let color_for = |role: Role, theme: &ThemeColors| -> crossterm::style::Color {
+        match role {
+            Role::Border => theme.border,
+            Role::Accent => theme.accent,
+            Role::Text => theme.text,
+        }
+    };
+
+    let rendered_lines: Vec<String> = lines
+        .into_iter()
+        .map(|segments| {
+            let mut line = String::new();
+            for seg in segments {
+                match theme {
+                    Some(t) => {
+                        line.push_str(&format!("\x1b[38;5;{}m{}", color_code(color_for(seg.role, t)), seg.text));
+                    }
+                    None => line.push_str(&seg.text),
+                }
+            }
+            if theme.is_some() {
+                line.push_str("\x1b[0m");
+            }
+            line
+        })
+        .collect();
+
+    rendered_lines.join("\n")
 }
 
 fn color_code(color: crossterm::style::Color) -> u8 {
@@ -146,7 +279,35 @@ mod tests {
             disk_total_gb: 926,
             disk_pct: 44,
             process_count: 412,
+            ..Default::default()
         }
+    }
+
+    /// Every optional/tier field populated — the worst case for row width.
+    fn sample_fully_populated() -> SystemInfo {
+        let info = SystemInfo {
+            cpu_model: Some("Apple M4 Max".to_string()),
+            cpu_cores: Some(16),
+            load_avg_1m: Some(2.47),
+            cpu_percent: None,
+            swap_used_mb: Some(512),
+            swap_total_mb: Some(2048),
+            local_ip: Some("192.168.1.42".to_string()),
+            battery_pct: Some(87),
+            battery_charging: Some(true),
+            shell: Some("/opt/homebrew/bin/zsh".to_string()),
+            terminal: Some("iTerm.app".to_string()),
+            gpu_name: Some("Apple M4 Max".to_string()),
+            ..sample()
+        };
+        info.tier3.set(crate::hostinfo::background::Tier3Snapshot {
+            public_ip: Some("203.0.113.7".to_string()),
+            pending_updates: Some(4),
+            net_rx_bps: Some(1_500_000),
+            net_tx_bps: Some(85_000),
+            ready: true,
+        });
+        info
     }
 
     #[test]
@@ -188,6 +349,34 @@ mod tests {
         let out = render_plain(&info, 80);
         for (label, _) in fields(&info) {
             assert!(out.contains(label), "missing field {label} in:\n{out}");
+        }
+    }
+
+    #[test]
+    fn absent_optional_fields_are_simply_omitted() {
+        let info = sample();
+        let out = render_plain(&info, 80);
+        for label in ["CPU", "Load", "CPU%", "Swap", "IP", "Battery", "Shell", "Term", "GPU", "Public IP", "Updates"] {
+            assert!(!out.contains(label), "unexpected field {label} present with no data:\n{out}");
+        }
+    }
+
+    #[test]
+    fn fully_populated_fields_all_appear() {
+        let info = sample_fully_populated();
+        let out = render_plain(&info, 100);
+        for (label, _) in fields(&info) {
+            assert!(out.contains(label), "missing field {label} in:\n{out}");
+        }
+    }
+
+    #[test]
+    fn row_width_invariant_holds_with_fully_populated_fields() {
+        let info = sample_fully_populated();
+        for width in [60u16, 100, 160] {
+            let out = render_plain(&info, width);
+            let widths: Vec<usize> = out.lines().map(UnicodeWidthStr::width).collect();
+            assert!(widths.windows(2).all(|w| w[0] == w[1]), "inconsistent row widths at {width}: {widths:?}");
         }
     }
 }

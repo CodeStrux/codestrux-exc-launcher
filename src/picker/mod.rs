@@ -175,7 +175,12 @@ pub enum PickerOutcome {
     Quit,
 }
 
-pub fn run_picker(config: &Config, start_profile: usize, theme: &ThemeColors, info: &SystemInfo) -> Result<PickerOutcome> {
+pub fn run_picker(
+    config: &Config,
+    start_profile: usize,
+    theme: &ThemeColors,
+    info: Option<&SystemInfo>,
+) -> Result<PickerOutcome> {
     if config.profiles.is_empty() {
         anyhow::bail!("config defines no profiles to show");
     }
@@ -193,7 +198,7 @@ fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
     theme: &ThemeColors,
-    info: &SystemInfo,
+    info: Option<&SystemInfo>,
 ) -> Result<PickerOutcome> {
     loop {
         let mut columns_for_frame = 1usize;

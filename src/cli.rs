@@ -35,6 +35,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub no_color: bool,
 
+    /// Hide the system-info panel in the interactive picker
+    #[arg(long, global = true)]
+    pub no_sysinfo: bool,
+
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
