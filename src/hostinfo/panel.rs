@@ -11,6 +11,11 @@ use crate::theme::ThemeColors;
 
 const MAX_FIELD_COLUMNS: usize = 4;
 const MIN_BOX_WIDTH: usize = 30;
+/// Below this terminal width, the panel switches to `fields_compact` — a
+/// short, single-column-friendly field set — instead of the full list, so a
+/// narrow terminal spends most of its height on the command grid rather
+/// than the info panel.
+const COMPACT_WIDTH_THRESHOLD: u16 = 80;
 
 /// Field order is grouped by category (system identity, compute, memory/
 /// storage, power, network, environment, background) rather than by tier or
@@ -91,6 +96,26 @@ fn fields(info: &SystemInfo) -> Vec<(&'static str, String)> {
     f
 }
 
+/// Minimal field set shown below `COMPACT_WIDTH_THRESHOLD`: just the
+/// "vitals" — uptime, memory, disk, and battery if present — so a narrow
+/// terminal doesn't spend most of its height on the info panel instead of
+/// the command grid.
+fn fields_compact(info: &SystemInfo) -> Vec<(&'static str, String)> {
+    let mut f = vec![
+        ("Uptime", format_uptime(info.uptime_secs)),
+        ("Memory", format!("{}M / {}M", info.mem_used_mb, info.mem_total_mb)),
+        (
+            "Disk",
+            format!("{}G / {}G ({}%)", info.disk_used_gb, info.disk_total_gb, info.disk_pct),
+        ),
+    ];
+    if let Some(pct) = info.battery_pct {
+        let charging = info.battery_charging.unwrap_or(false);
+        f.push(("Battery", format!("{pct}%{}", if charging { " (charging)" } else { "" })));
+    }
+    f
+}
+
 /// `…` while the background fetch hasn't completed its first pass yet, `n/a`
 /// if it completed but couldn't determine this particular value (offline,
 /// no supported package manager, etc.), or the real value once known.
@@ -138,7 +163,7 @@ pub struct Segment {
 /// the border) can each get their own color without re-deriving the
 /// column/padding layout a second time.
 pub fn layout(info: &SystemInfo, terminal_width: u16) -> Vec<Vec<Segment>> {
-    let field_list = fields(info);
+    let field_list = if terminal_width < COMPACT_WIDTH_THRESHOLD { fields_compact(info) } else { fields(info) };
     let label_width = field_list.iter().map(|(l, _)| l.len()).max().unwrap_or(0);
     let value_width = field_list.iter().map(|(_, v)| display_width(v)).max().unwrap_or(0);
     // "Label   value" -> label + 3 spaces + value
@@ -415,6 +440,39 @@ mod tests {
             ready_but_empty_count, ready_and_populated_count,
             "field count changed once real background values arrived"
         );
+    }
+
+    #[test]
+    fn below_threshold_uses_the_compact_field_set() {
+        let info = sample_fully_populated();
+        let out = render_plain(&info, COMPACT_WIDTH_THRESHOLD - 1);
+        for label in ["Uptime", "Memory", "Disk", "Battery"] {
+            assert!(out.contains(label), "missing compact field {label} in:\n{out}");
+        }
+        for label in ["OS", "Host", "Kernel", "CPU", "Load", "GPU", "Swap", "Shell", "Term", "Public IP"] {
+            assert!(!out.contains(label), "full-only field {label} leaked into compact panel:\n{out}");
+        }
+    }
+
+    #[test]
+    fn at_or_above_threshold_uses_the_full_field_set() {
+        let info = sample();
+        let out = render_plain(&info, COMPACT_WIDTH_THRESHOLD);
+        for (label, _) in fields(&info) {
+            assert!(out.contains(label), "missing field {label} at exactly the threshold width:\n{out}");
+        }
+    }
+
+    #[test]
+    fn compact_field_set_is_much_shorter_than_the_full_one() {
+        let info = sample_fully_populated();
+        let compact_len = fields_compact(&info).len();
+        let full_len = fields(&info).len();
+        assert!(
+            compact_len <= 4,
+            "compact field set should stay minimal, got {compact_len} fields"
+        );
+        assert!(compact_len < full_len, "compact set ({compact_len}) should be shorter than full ({full_len})");
     }
 
     #[test]
