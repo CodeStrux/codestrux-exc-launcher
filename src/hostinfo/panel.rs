@@ -58,21 +58,20 @@ fn fields(info: &SystemInfo) -> Vec<(&'static str, String)> {
         f.push(("Battery", format!("{pct}%{}", if charging { " (charging)" } else { "" })));
     }
 
-    // Network (local, then background-refreshed).
+    // Network (local, then background-refreshed). Background-refreshed
+    // fields are always present, as a placeholder if not resolved yet, so
+    // the panel's row/column count never changes once the picker is
+    // open — only the cell text updates in place, no layout jump.
     if let Some(ip) = &info.local_ip {
         f.push(("IP", ip.clone()));
     }
     let tier3 = info.tier3.snapshot();
-    if !tier3.ready {
-        f.push(("Net", "fetching\u{2026}".to_string()));
-    } else {
-        if let Some(ip) = &tier3.public_ip {
-            f.push(("Public IP", ip.clone()));
-        }
-        if let (Some(rx), Some(tx)) = (tier3.net_rx_bps, tier3.net_tx_bps) {
-            f.push(("Net", format!("\u{2193}{} \u{2191}{}", format_bps(rx), format_bps(tx))));
-        }
-    }
+    let net_value = match (tier3.net_rx_bps, tier3.net_tx_bps) {
+        (Some(rx), Some(tx)) => Some(format!("\u{2193}{} \u{2191}{}", format_bps(rx), format_bps(tx))),
+        _ => None,
+    };
+    f.push(("Public IP", tier3_placeholder(tier3.ready, tier3.public_ip.clone())));
+    f.push(("Net", tier3_placeholder(tier3.ready, net_value)));
 
     // Environment.
     if let Some(shell) = &info.shell {
@@ -86,13 +85,21 @@ fn fields(info: &SystemInfo) -> Vec<(&'static str, String)> {
     }
 
     // Background (package updates only — network fields already grouped above).
-    if tier3.ready
-        && let Some(n) = tier3.pending_updates
-    {
-        f.push(("Updates", format!("{n} pending")));
-    }
+    let updates_value = tier3.pending_updates.map(|n| format!("{n} pending"));
+    f.push(("Updates", tier3_placeholder(tier3.ready, updates_value)));
 
     f
+}
+
+/// `…` while the background fetch hasn't completed its first pass yet, `n/a`
+/// if it completed but couldn't determine this particular value (offline,
+/// no supported package manager, etc.), or the real value once known.
+fn tier3_placeholder(ready: bool, value: Option<String>) -> String {
+    if !ready {
+        "\u{2026}".to_string()
+    } else {
+        value.unwrap_or_else(|| "n/a".to_string())
+    }
 }
 
 fn format_bps(bytes_per_sec: u64) -> String {
@@ -356,9 +363,58 @@ mod tests {
     fn absent_optional_fields_are_simply_omitted() {
         let info = sample();
         let out = render_plain(&info, 80);
-        for label in ["CPU", "Load", "CPU%", "Swap", "IP", "Battery", "Shell", "Term", "GPU", "Public IP", "Updates"] {
+        // "IP" is deliberately excluded: it's now a substring of the
+        // always-present "Public IP" placeholder row, so it can't be
+        // checked this way — local_ip's own absence isn't covered here.
+        for label in ["CPU", "Load", "CPU%", "Swap", "Battery", "Shell", "Term", "GPU"] {
             assert!(!out.contains(label), "unexpected field {label} present with no data:\n{out}");
         }
+    }
+
+    #[test]
+    fn background_fields_show_a_placeholder_before_ready() {
+        // `sample()`'s tier3 handle defaults to not-ready.
+        let info = sample();
+        let out = render_plain(&info, 100);
+        assert!(out.contains("Public IP"), "Public IP row should be present even before ready:\n{out}");
+        assert!(out.contains("Updates"), "Updates row should be present even before ready:\n{out}");
+        assert!(out.contains('\u{2026}'), "expected a loading placeholder glyph in:\n{out}");
+    }
+
+    #[test]
+    fn background_field_count_is_stable_across_readiness_states() {
+        // The picker must never reflow (grow/shrink rows) as background
+        // data arrives — only the cell text should change in place. Holds
+        // every other field constant (via `sample()`) so tier3 readiness is
+        // the only variable across the three snapshots compared.
+        let not_ready = sample();
+
+        let ready_but_empty = sample();
+        ready_but_empty
+            .tier3
+            .set(crate::hostinfo::background::Tier3Snapshot { ready: true, ..Default::default() });
+
+        let ready_and_populated = sample();
+        ready_and_populated.tier3.set(crate::hostinfo::background::Tier3Snapshot {
+            public_ip: Some("203.0.113.7".to_string()),
+            pending_updates: Some(4),
+            net_rx_bps: Some(1_500_000),
+            net_tx_bps: Some(85_000),
+            ready: true,
+        });
+
+        let not_ready_count = fields(&not_ready).len();
+        let ready_but_empty_count = fields(&ready_but_empty).len();
+        let ready_and_populated_count = fields(&ready_and_populated).len();
+
+        assert_eq!(
+            not_ready_count, ready_but_empty_count,
+            "field count changed once the background pass completed with no data"
+        );
+        assert_eq!(
+            ready_but_empty_count, ready_and_populated_count,
+            "field count changed once real background values arrived"
+        );
     }
 
     #[test]

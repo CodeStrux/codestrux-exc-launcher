@@ -168,6 +168,13 @@ impl<'a> App<'a> {
     fn selected_global_id(&self) -> Option<usize> {
         self.filtered.get(self.selected).map(|&local_idx| self.profile_base() + local_idx + 1)
     }
+
+    /// Typing "exit" and pressing Enter quits, mirroring how you'd leave a
+    /// shell — this takes priority over running a matching command, even if
+    /// some config happens to declare a command literally named "exit".
+    fn wants_exit(&self) -> bool {
+        self.query.trim().eq_ignore_ascii_case("exit")
+    }
 }
 
 pub enum PickerOutcome {
@@ -233,6 +240,9 @@ fn event_loop(
                     KeyCode::Esc => return Ok(PickerOutcome::Quit),
                     KeyCode::Char('c') if ctrl => return Ok(PickerOutcome::Quit),
                     KeyCode::Enter => {
+                        if app.wants_exit() {
+                            return Ok(PickerOutcome::Quit);
+                        }
                         if let (Some(id), Some(cmd)) = (app.selected_global_id(), app.selected_command()) {
                             return Ok(PickerOutcome::Run(id, cmd));
                         }
@@ -371,5 +381,25 @@ mod tests {
         app.query.clear();
         app.recompute_filter();
         assert_eq!(app.filtered, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn typing_exit_wants_to_quit() {
+        let profiles = vec![profile_with(&["a", "b", "c"])];
+        let mut app = App::new(&profiles, 0);
+        for query in ["exit", "EXIT", "ExIt", " exit "] {
+            app.query = query.to_string();
+            assert!(app.wants_exit(), "{query:?} should be treated as a quit request");
+        }
+    }
+
+    #[test]
+    fn queries_other_than_exit_do_not_want_to_quit() {
+        let profiles = vec![profile_with(&["a", "b", "c"])];
+        let mut app = App::new(&profiles, 0);
+        for query in ["", "a", "exiting", "exi", "quit"] {
+            app.query = query.to_string();
+            assert!(!app.wants_exit(), "{query:?} should not be treated as a quit request");
+        }
     }
 }
